@@ -3203,6 +3203,12 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
 
   case Builtin::BI__builtin_matrix_column_major_store:
     return BuiltinMatrixColumnMajorStore(TheCall, TheCallResult);
+  
+  case Builtin::BI__builtin_sparse_matrix_load:
+    return BuiltinMatrixColumnMajorLoad(TheCall, TheCallResult);
+
+  case Builtin::BI__builtin_sparse_matrix_store:
+    return BuiltinMatrixColumnMajorStore(TheCall, TheCallResult);
 
   case Builtin::BI__builtin_get_device_side_mangled_name: {
     auto Check = [](CallExpr *TheCall) {

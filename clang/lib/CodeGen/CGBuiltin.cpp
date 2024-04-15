@@ -64,6 +64,7 @@
 #include "llvm/TargetParser/X86TargetParser.h"
 #include <optional>
 #include <sstream>
+#include <llvm/Support/Debug.h>
 
 using namespace clang;
 using namespace CodeGen;
@@ -2612,6 +2613,7 @@ static RValue EmitHipStdParUnsupportedBuiltin(CodeGenFunction *CGF,
   return RValue::get(CGF->Builder.CreateCall(UBF, Args));
 }
 
+/* HERE */
 RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
                                         const CallExpr *E,
                                         ReturnValueSlot ReturnValue) {
@@ -2733,6 +2735,7 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
       GenerateIntrinsics =
           ConstWithoutErrnoOrExceptions && ErrnoOverridenToFalseWithOpt;
   }
+  /* HERE */
   if (GenerateIntrinsics) {
     switch (BuiltinIDIfNoAsmLabel) {
     case Builtin::BIceil:
@@ -3923,8 +3926,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
                                              MatrixTy->getNumColumns());
     return RValue::get(Result);
   }
-
-  case Builtin::BI__builtin_matrix_column_major_load: {
+        
+  case Builtin::BI__builtin_sparse_matrix_load: {
+    DEBUG_WITH_TYPE("matrix", llvm::dbgs() << "hi hello sparse load\n");
     MatrixBuilder MB(Builder);
     // Emit everything that isn't dependent on the first parameter type
     Value *Stride = EmitScalarExpr(E->getArg(3));
@@ -3944,7 +3948,51 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
     return RValue::get(Result);
   }
 
+  case Builtin::BI__builtin_matrix_column_major_load: {
+    DEBUG_WITH_TYPE("matrix", llvm::dbgs() << "hi hello load\n");
+    MatrixBuilder MB(Builder);
+    // Emit everything that isn't dependent on the first parameter type
+    Value *Stride = EmitScalarExpr(E->getArg(3));
+    const auto *ResultTy = E->getType()->getAs<ConstantMatrixType>();
+    auto *PtrTy = E->getArg(0)->getType()->getAs<PointerType>();
+    assert(PtrTy && "arg0 must be of pointer type");
+    bool IsVolatile = PtrTy->getPointeeType().isVolatileQualified();
+
+    Address Src = EmitPointerWithAlignment(E->getArg(0));
+    EmitNonNullArgCheck(RValue::get(Src.emitRawPointer(*this)),
+                        E->getArg(0)->getType(), E->getArg(0)->getExprLoc(), FD,
+                        0);
+    Value *Result = MB.CreateColumnMajorLoad(
+        Src.getElementType(), Src.emitRawPointer(*this),
+        Align(Src.getAlignment().getQuantity()), Stride, IsVolatile,
+        ResultTy->getNumRows(), ResultTy->getNumColumns(), "matrix");
+    return RValue::get(Result);
+  }
+
+  case Builtin::BI__builtin_sparse_matrix_store: {
+    DEBUG_WITH_TYPE("matrix", llvm::dbgs() << "hi hello sparse store\n");
+    MatrixBuilder MB(Builder);
+    Value *Matrix = EmitScalarExpr(E->getArg(0));
+    Address Dst = EmitPointerWithAlignment(E->getArg(1));
+    Value *Stride = EmitScalarExpr(E->getArg(2));
+
+    const auto *MatrixTy = E->getArg(0)->getType()->getAs<ConstantMatrixType>();
+    auto *PtrTy = E->getArg(1)->getType()->getAs<PointerType>();
+    assert(PtrTy && "arg1 must be of pointer type");
+    bool IsVolatile = PtrTy->getPointeeType().isVolatileQualified();
+
+    EmitNonNullArgCheck(RValue::get(Dst.emitRawPointer(*this)),
+                        E->getArg(1)->getType(), E->getArg(1)->getExprLoc(), FD,
+                        0);
+    Value *Result = MB.CreateColumnMajorStore(
+        Matrix, Dst.emitRawPointer(*this),
+        Align(Dst.getAlignment().getQuantity()), Stride, IsVolatile,
+        MatrixTy->getNumRows(), MatrixTy->getNumColumns());
+    return RValue::get(Result);
+  }
+
   case Builtin::BI__builtin_matrix_column_major_store: {
+    DEBUG_WITH_TYPE("matrix", llvm::dbgs() << "hi hello store\n");
     MatrixBuilder MB(Builder);
     Value *Matrix = EmitScalarExpr(E->getArg(0));
     Address Dst = EmitPointerWithAlignment(E->getArg(1));

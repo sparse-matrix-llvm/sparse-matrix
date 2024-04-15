@@ -1416,6 +1416,19 @@ def MatrixColumnMajorStore : Builtin {
   let Prototype = "void(...)";
 }
 
+/* HERE */
+def SparseMatrixLoad : Builtin {
+  let Spellings = ["__builtin_sparse_matrix_load"];
+  let Attributes = [NoThrow, FunctionWithBuiltinPrefix, CustomTypeChecking];
+  let Prototype = "void(...)";
+}
+
+def SparseMatrixStore : Builtin {
+  let Spellings = ["__builtin_sparse_matrix_store"];
+  let Attributes = [NoThrow, FunctionWithBuiltinPrefix, CustomTypeChecking];
+  let Prototype = "void(...)";
+}
+
 // "Overloaded" Atomic operator builtins.  These are overloaded to support data
 // types of i8, i16, i32, i64, and i128.  The front-end sees calls to the
 // non-suffixed version of these (which has a bogus type) and transforms them to

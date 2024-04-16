@@ -52,6 +52,7 @@ add_llvm_component_library(LLVMScalarOpts
   LowerExpectIntrinsic.cpp
   LowerGuardIntrinsic.cpp
   LowerMatrixIntrinsics.cpp
+  LowerSparseIntrinsics.cpp
   LowerWidenableCondition.cpp
   MakeGuardsExplicit.cpp
   MemCpyOptimizer.cpp

@@ -45,14 +45,17 @@ class LowerSparseIntrinsics {
 //   /// All column vectors must have the same vector type.
   class CSCMatrixTy {
     SmallVector<Value *, 16> Values;
-    SmallVector<Value *, 16> Row_Indices;
-    SmallVector<Value *, 16> Col_Pointers;
+    SmallVector<Value *, 16> RowIndices;
+    SmallVector<Value *, 16> ColPointers;
     std::uint32_t nnz;
 
-  // public:
-    // ColumnMatrixTy() : Columns() {}
-    // ColumnMatrixTy(ArrayRef<Value *> Cols)
-    //     : Columns(Cols.begin(), Cols.end()) {}
+  public:
+    CSCMatrixTy() : Values(), RowIndices(), ColPointers(), nnz(0) {}
+    CSCMatrixTy(ArrayRef<Value *> Values, ArrayRef<Value *> RowIndices,
+                   ArrayRef<Value *> ColPointers, uint32_t nnz)
+        : Values(Values.begin(), Values.end()),
+          RowIndices(RowIndices.begin(), RowIndices.end()),
+          ColPointers(ColPointers.begin(), ColPointers.end()), nnz(nnz) {}
 
     // // Value *getColumn(unsigned i) const { return Columns[i]; }
 
@@ -94,28 +97,45 @@ public:
   LowerSparseIntrinsics(Function &F, TargetTransformInfo &TTI)
       : Func(F), DL(F.getParent()->getDataLayout()), TTI(TTI) {}
 
-//   /// Return the set of column vectors that a matrix value is lowered to.
-//   ///
-//   /// We split the flat vector \p MatrixVal containing a matrix with shape \p SI
-//   /// into column vectors.
-//   ColumnMatrixTy getMatrix(Value *MatrixVal, const ShapeInfo &SI,
-//                            IRBuilder<> Builder) {
-//     VectorType *VType = dyn_cast<VectorType>(MatrixVal->getType());
-//     assert(VType && "MatrixVal must be a vector type");
-//     assert(VType->getNumElements() == SI.NumRows * SI.NumColumns &&
-//            "The vector size must match the number of matrix elements");
-//     SmallVector<Value *, 16> SplitVecs;
-//     Value *Undef = UndefValue::get(VType);
+  // / Return the set of column vectors that a matrix value is lowered to.
+  // /
+  // / We split the flat vector \p MatrixVal containing a matrix with shape \p
+  // SI / into column vectors.
+  CSCMatrixTy getMatrix(Value *MatrixVal, const ShapeInfo &SI,
+                        IRBuilder<> &Builder) {
+    VectorType *VType = dyn_cast<VectorType>(MatrixVal->getType());
+    assert(VType && "CSCMatrixVal must be a vector type");
+    // assert(VType->getNumElements() == SI.NumRows * SI.NumColumns &&
+    //        "The vector size must match the number of matrix elements");
 
-//     for (unsigned MaskStart = 0; MaskStart < VType->getNumElements();
-//          MaskStart += SI.NumRows) {
-//       Constant *Mask = createSequentialMask(Builder, MaskStart, SI.NumRows, 0);
-//       Value *V = Builder.CreateShuffleVector(MatrixVal, Undef, Mask, "split");
-//       SplitVecs.push_back(V);
-//     }
+    Value *Index = Builder.getInt32(0);
+    Value *FirstElement =
+        Builder.CreateExtractElement(MatrixVal, Index, "firstElement");
+    ConstantInt *CInt = dyn_cast<ConstantInt>(FirstElement);
+    assert(CInt && "nnz must be an integer");
+    assert(!CInt->isNegative() && "nnz must be nonnegative");
+    uint32_t nnz = CInt->getZExtValue();
 
-//     return {SplitVecs};
-//   }
+    uint32_t OffsetColPointers = 1;
+    uint32_t OffsetRowIndices = OffsetColPointers + SI.NumColumns + 1;
+    uint32_t OffsetValues = OffsetRowIndices + nnz;
+
+    auto MaskColPtrs =
+        std::move(createSequentialMask(OffsetColPointers, OffsetRowIndices, 0));
+    Value *ColPointers = Builder.CreateShuffleVector(
+        MatrixVal, MaskColPtrs, "colPointers");
+
+    auto MaskRowIndices =
+        std::move(createSequentialMask(OffsetRowIndices, OffsetValues, 0));
+    Value *RowIndices = Builder.CreateShuffleVector(
+        MatrixVal, MaskRowIndices, "rowIndices");
+
+    auto MaskValues = std::move(createSequentialMask(OffsetValues, OffsetValues + nnz, 0));
+    Value *Values =
+        Builder.CreateShuffleVector(MatrixVal, MaskValues, "values");
+
+    return {ColPointers, RowIndices, Values, nnz};
+  }
 
   // Replace intrinsic calls
   bool VisitCallInst(CallInst *Inst) {
@@ -167,12 +187,12 @@ public:
 //     return Builder.CreateAlignedStore(ColumnValue, ColumnPtr, Align);
 //   }
 
-//   /// Turns \p BasePtr into an elementwise pointer to \p EltType.
-//   Value *createElementPtr(Value *BasePtr, Type *EltType, IRBuilder<> &Builder) {
-//     unsigned AS = cast<PointerType>(BasePtr->getType())->getAddressSpace();
-//     Type *EltPtrType = PointerType::get(EltType, AS);
-//     return Builder.CreatePointerCast(BasePtr, EltPtrType);
-//   }
+  /// Turns \p BasePtr into an elementwise pointer to \p EltType.
+  Value *createElementPtr(Value *BasePtr, Type *EltType, IRBuilder<> &Builder) {
+    unsigned AS = cast<PointerType>(BasePtr->getType())->getAddressSpace();
+    Type *EltPtrType = PointerType::get(EltType, AS);
+    return Builder.CreatePointerCast(BasePtr, EltPtrType);
+  }
 
   /// Lowers llvm.matrix.columnwise.load.
   ///
@@ -207,52 +227,15 @@ public:
    * 
   */
   void LowerCSCStore(CallInst *Inst) {
-        IRBuilder<> Builder(Inst);
-        // SmallVector<Value *, 16> values = Inst->getArgOperand(0);
-        
-// or        SmallVector<Valow_indicesue *, 16> values = Inst1>getArgOperand(0);
-        // Value *Data = Inst->gecol_pointerserand(0);
-// 2
-                // Value *Indices = Inst->getArgOperand(1);
-        // Value *IndPtr = Inst->getArgOperand(2);
-        // ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(3)),
-        //                 cast<ConstantInt>(Inst->getArgOperand(4)));
-        // auto VType = cast<VectorType>(Matrix->getType());
-        // Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
+    IRBuilder<> Builder(Inst);
+    Value *Matrix = Inst->getArgOperand(0);
+    Value *Ptr = Inst->getArgOperand(1);
+    ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(2)),
+                    cast<ConstantInt>(Inst->getArgOperand(3)));
+    auto VType = cast<VectorType>(Matrix->getType());
+    Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
+    auto LM = getMatrix(Matrix, Shape, Builder);
 
-        // Simple operation to confirm we reached this point.
-        // For demonstration purposes, we'll just replace the original
-        // instruction with a debug print call if your environment supports it,
-        // or a NOP otherwise.
-
-        // // Find or create the declaration for printf function
-        // LLVMContext &Ctx = Inst->getContext();
-        // Function *PrintfFunc = printf_prototype(Ctx, Inst->getModule());
-
-        // // Create a string constant
-        // Value *Str = Builder.CreateGlobalStringPtr("LowerCSCStore called\n");
-
-        // // Assuming printf is available, emit a call to printf
-        // if (PrintfFunc) {
-        //     Builder.CreateCall(PrintfFunc, Str);
-        // } else {
-        // If not, just create a NOP via a dummy operation (e.g., adding zero to
-        // a number) Ensure there's an integer argument to work with or create a
-        // dummy
-        // Value *DummyVal = Builder.getInt32(0);
-        // Builder.CreateAdd(DummyVal, Builder.getInt32(0), "nop");
-    // }
-
-    // IRBuilder<> Builder(Inst);
-    // Value *Matrix = Inst->getArgOperand(0);
-    // Value *Ptr = Inst->getArgOperand(1);
-    // Value *Stride = Inst->getArgOperand(2);
-    // ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(3)),
-    //                 cast<ConstantInt>(Inst->getArgOperand(4)));
-    // auto VType = cast<VectorType>(Matrix->getType());
-    // Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
-
-    // auto LM = getMatrix(Matrix, Shape, Builder);
     // for (auto C : enumerate(LM.columns())) {
     //   Value *GEP =
     //       computeColumnAddr(EltPtr, Builder.getInt32(C.index()), Stride,

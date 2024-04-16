@@ -43,49 +43,52 @@ class LowerSparseIntrinsics {
 
 //   /// Wrapper class representing a matrix as a set of column vectors.
 //   /// All column vectors must have the same vector type.
-//   class ColumnMatrixTy {
-//     SmallVector<Value *, 16> Columns;
+  class CSCMatrixTy {
+    SmallVector<Value *, 16> Values;
+    SmallVector<Value *, 16> Row_Indices;
+    SmallVector<Value *, 16> Col_Pointers;
+    std::uint32_t nnz;
 
-//   public:
-//     ColumnMatrixTy() : Columns() {}
-//     ColumnMatrixTy(ArrayRef<Value *> Cols)
-//         : Columns(Cols.begin(), Cols.end()) {}
+  // public:
+    // ColumnMatrixTy() : Columns() {}
+    // ColumnMatrixTy(ArrayRef<Value *> Cols)
+    //     : Columns(Cols.begin(), Cols.end()) {}
 
-//     Value *getColumn(unsigned i) const { return Columns[i]; }
+    // // Value *getColumn(unsigned i) const { return Columns[i]; }
 
-//     void setColumn(unsigned i, Value *V) { Columns[i] = V; }
+    // void setColumn(unsigned i, Value *V) { Columns[i] = V; }
 
-//     size_t getNumColumns() const { return Columns.size(); }
+    // size_t getNumColumns() const { return Columns.size(); }
 
-//     const SmallVectorImpl<Value *> &getColumnVectors() const { return Columns; }
+    // const SmallVectorImpl<Value *> &getColumnVectors() const { return Columns; }
 
-//     SmallVectorImpl<Value *> &getColumnVectors() { return Columns; }
+    // SmallVectorImpl<Value *> &getColumnVectors() { return Columns; }
 
-//     void addColumn(Value *V) { Columns.push_back(V); }
+    // void addColumn(Value *V) { Columns.push_back(V); }
 
-//     iterator_range<SmallVector<Value *, 8>::iterator> columns() {
-//       return make_range(Columns.begin(), Columns.end());
-//     }
+    // iterator_range<SmallVector<Value *, 8>::iterator> columns() {
+    //   return make_range(Columns.begin(), Columns.end());
+    // }
 
-//     /// Embed the columns of the matrix into a flat vector by concatenating
-//     /// them.
-//     Value *embedInVector(IRBuilder<> &Builder) const {
-//       return Columns.size() == 1 ? Columns[0]
-//                                  : concatenateVectors(Builder, Columns);
-//     }
-//   };
+    /// Embed the columns of the matrix into a flat vector by concatenating
+    /// them.
+    // Value *embedInVector(IRBuilder<> &Builder) const {
+    //   return Columns.size() == 1 ? Columns[0]
+    //                              : concatenateVectors(Builder, Columns);
+    // }
+  };
 
-//   struct ShapeInfo {
-//     unsigned NumRows;
-//     unsigned NumColumns;
+  struct ShapeInfo {
+    unsigned NumRows;
+    unsigned NumColumns;
 
-//     ShapeInfo(unsigned NumRows = 0, unsigned NumColumns = 0)
-//         : NumRows(NumRows), NumColumns(NumColumns) {}
+    ShapeInfo(unsigned NumRows = 0, unsigned NumColumns = 0)
+        : NumRows(NumRows), NumColumns(NumColumns) {}
 
-//     ShapeInfo(ConstantInt *NumRows, ConstantInt *NumColumns)
-//         : NumRows(NumRows->getZExtValue()),
-//           NumColumns(NumColumns->getZExtValue()) {}
-//   };
+    ShapeInfo(ConstantInt *NumRows, ConstantInt *NumColumns)
+        : NumRows(NumRows->getZExtValue()),
+          NumColumns(NumColumns->getZExtValue()) {}
+  };
 
 public:
   LowerSparseIntrinsics(Function &F, TargetTransformInfo &TTI)
@@ -199,29 +202,46 @@ public:
   /// Lowers llvm.matrix.columnwise.store.
   ///
   /// The intrinsic store a matrix back memory using a stride between columns.
+  /*
+   *
+   * 
+  */
   void LowerCSCStore(CallInst *Inst) {
         IRBuilder<> Builder(Inst);
-    
-    // Simple operation to confirm we reached this point.
-    // For demonstration purposes, we'll just replace the original instruction
-    // with a debug print call if your environment supports it, or a NOP otherwise.
-    
-    // Find or create the declaration for printf function
-    LLVMContext &Ctx = Inst->getContext();
-    Function *PrintfFunc = printfDeclaration(Ctx, Inst->getModule());
+        // SmallVector<Value *, 16> values = Inst->getArgOperand(0);
+        
+// or        SmallVector<Valow_indicesue *, 16> values = Inst1>getArgOperand(0);
+        // Value *Data = Inst->gecol_pointerserand(0);
+// 2
+                // Value *Indices = Inst->getArgOperand(1);
+        // Value *IndPtr = Inst->getArgOperand(2);
+        // ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(3)),
+        //                 cast<ConstantInt>(Inst->getArgOperand(4)));
+        // auto VType = cast<VectorType>(Matrix->getType());
+        // Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
 
-    // Create a string constant
-    Value *Str = Builder.CreateGlobalStringPtr("LowerCSCStore called\n");
+        // Simple operation to confirm we reached this point.
+        // For demonstration purposes, we'll just replace the original
+        // instruction with a debug print call if your environment supports it,
+        // or a NOP otherwise.
 
-    // Assuming printf is available, emit a call to printf
-    if (PrintfFunc) {
-        Builder.CreateCall(PrintfFunc, Str);
-    } else {
-        // If not, just create a NOP via a dummy operation (e.g., adding zero to a number)
-        // Ensure there's an integer argument to work with or create a dummy
-        Value *DummyVal = Builder.getInt32(0);
-        Builder.CreateAdd(DummyVal, Builder.getInt32(0), "nop");
-    }
+        // // Find or create the declaration for printf function
+        // LLVMContext &Ctx = Inst->getContext();
+        // Function *PrintfFunc = printf_prototype(Ctx, Inst->getModule());
+
+        // // Create a string constant
+        // Value *Str = Builder.CreateGlobalStringPtr("LowerCSCStore called\n");
+
+        // // Assuming printf is available, emit a call to printf
+        // if (PrintfFunc) {
+        //     Builder.CreateCall(PrintfFunc, Str);
+        // } else {
+        // If not, just create a NOP via a dummy operation (e.g., adding zero to
+        // a number) Ensure there's an integer argument to work with or create a
+        // dummy
+        // Value *DummyVal = Builder.getInt32(0);
+        // Builder.CreateAdd(DummyVal, Builder.getInt32(0), "nop");
+    // }
 
     // IRBuilder<> Builder(Inst);
     // Value *Matrix = Inst->getArgOperand(0);

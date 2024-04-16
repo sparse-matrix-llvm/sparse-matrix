@@ -1,0 +1,11 @@
+llvm := "/home/chris/Workspace/sparse-matrix"
+clangpp := llvm + "/build/bin/clang++"
+clang := llvm + "/build/bin/clang"
+
+
+emit-llvm FILE:
+    {{clang}} -S -fenable-matrix -emit-llvm -mllvm -debug-only=matrix {{FILE}}.c -o {{FILE}}.ll
+
+
+compile FILE:
+    {{clang}} -fenable-matrix {{FILE}}.c -o {{FILE}}

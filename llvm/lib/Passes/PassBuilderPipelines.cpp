@@ -112,6 +112,7 @@
 #include "llvm/Transforms/Scalar/LowerConstantIntrinsics.h"
 #include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
 #include "llvm/Transforms/Scalar/LowerMatrixIntrinsics.h"
+#include "llvm/Transforms/Scalar/LowerSparseIntrinsics.h"
 #include "llvm/Transforms/Scalar/MemCpyOptimizer.h"
 #include "llvm/Transforms/Scalar/MergedLoadStoreMotion.h"
 #include "llvm/Transforms/Scalar/NewGVN.h"
@@ -276,6 +277,10 @@ static cl::opt<bool> EnableOrderFileInstrumentation(
 static cl::opt<bool>
     EnableMatrix("enable-matrix", cl::init(false), cl::Hidden,
                  cl::desc("Enable lowering of the matrix intrinsics"));
+
+static cl::opt<bool>
+    EnableSparse("enable-sparse", cl::init(false), cl::Hidden,
+                 cl::desc("Enable lowering of the sparse intrinsics"));
 
 static cl::opt<bool> EnableConstraintElimination(
     "enable-constraint-elimination", cl::init(true), cl::Hidden,
@@ -1411,6 +1416,11 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
 
   if (EnableMatrix) {
     OptimizePM.addPass(LowerMatrixIntrinsicsPass());
+    OptimizePM.addPass(EarlyCSEPass());
+  }
+
+  if (EnableSparse) {
+    OptimizePM.addPass(LowerSparseIntrinsicsPass());
     OptimizePM.addPass(EarlyCSEPass());
   }
 

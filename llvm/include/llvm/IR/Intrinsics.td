@@ -2484,10 +2484,9 @@ def int_matrix_column_major_store
 // https://scipy-lectures.org/advanced/scipy_sparse/csc_matrix.html
 def int_csc_matrix_store : DefaultAttrsIntrinsic<[],
               [llvm_anyvector_ty, // flat array
-               llvm_ptr_ty, // where data will be stored
-               llvm_i32_ty,       // number of rows
-               llvm_i32_ty],      // number of columns
-              [WriteOnly<ArgIndex<1>>, IntrWillReturn, ImmArg<ArgIndex<3>>, ImmArg<ArgIndex<4>>]>;
+               llvm_ptr_ty], // where data will be stored
+              [IntrNoSync, IntrWillReturn, IntrArgMemOnly, IntrWriteMem,
+               WriteOnly<ArgIndex<1>>, NoCapture<ArgIndex<1>>]>;
 
 
 // def int_csc_matrix_load : DefaultAttrsIntrinsic<[],

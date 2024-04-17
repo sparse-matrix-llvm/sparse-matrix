@@ -43,13 +43,13 @@ class LowerSparseIntrinsics {
 
 //   /// Wrapper class representing a matrix as a set of column vectors.
 //   /// All column vectors must have the same vector type.
-  class CSCMatrixTy {
+  struct CSCMatrixTy {
     SmallVector<Value *, 16> Values;
     SmallVector<Value *, 16> RowIndices;
     SmallVector<Value *, 16> ColPointers;
     std::uint32_t nnz;
 
-  public:
+  // public:
     CSCMatrixTy() : Values(), RowIndices(), ColPointers(), nnz(0) {}
     CSCMatrixTy(ArrayRef<Value *> Values, ArrayRef<Value *> RowIndices,
                    ArrayRef<Value *> ColPointers, uint32_t nnz)
@@ -93,6 +93,29 @@ class LowerSparseIntrinsics {
           NumColumns(NumColumns->getZExtValue()) {}
   };
 
+  // namespace {
+  // Value *computeVectorAddr(Value *BasePtr, Value *VecIdx, Value *Stride,
+  //                          unsigned NumElements, Type *EltType,
+  //                          IRBuilder<> &Builder) {
+
+  //   // assert((!isa<ConstantInt>(Stride) ||
+  //           // cast<ConstantInt>(Stride)->getZExtValue() >= NumElements) &&
+  //         //  "Stride must be >= the number of elements in the result vector.");
+
+  //   // Compute the start of the vector with index VecIdx as VecIdx * Stride.
+  //   // Value *VecStart = Builder.CreateMul(VecIdx, Stride, "vec.start");
+
+  //   // Get pointer to the start of the selected vector. Skip GEP creation,
+  //   // if we select vector 0.
+  //   if (isa<ConstantInt>(VecStart) && cast<ConstantInt>(VecStart)->isZero())
+  //     VecStart = BasePtr;
+  //   else
+  //     VecStart = Builder.CreateGEP(EltType, BasePtr, VecStart, "vec.gep");
+
+  //   return VecStart;
+  // }
+  // }
+
 public:
   LowerSparseIntrinsics(Function &F, TargetTransformInfo &TTI)
       : Func(F), DL(F.getParent()->getDataLayout()), TTI(TTI) {}
@@ -114,23 +137,24 @@ public:
     ConstantInt *CInt = dyn_cast<ConstantInt>(FirstElement);
     assert(CInt && "nnz must be an integer");
     assert(!CInt->isNegative() && "nnz must be nonnegative");
-    uint32_t nnz = CInt->getZExtValue();
+    unsigned nnz = CInt->getZExtValue();
 
-    uint32_t OffsetColPointers = 1;
-    uint32_t OffsetRowIndices = OffsetColPointers + SI.NumColumns + 1;
-    uint32_t OffsetValues = OffsetRowIndices + nnz;
+    unsigned OffsetColPointers = 1;
+    unsigned OffsetRowIndices = OffsetColPointers + SI.NumColumns + 1;
+    unsigned OffsetValues = OffsetRowIndices + nnz;
 
     auto MaskColPtrs =
         std::move(createSequentialMask(OffsetColPointers, OffsetRowIndices, 0));
-    Value *ColPointers = Builder.CreateShuffleVector(
-        MatrixVal, MaskColPtrs, "colPointers");
+    Value *ColPointers =
+        Builder.CreateShuffleVector(MatrixVal, MaskColPtrs, "colPointers");
 
     auto MaskRowIndices =
         std::move(createSequentialMask(OffsetRowIndices, OffsetValues, 0));
-    Value *RowIndices = Builder.CreateShuffleVector(
-        MatrixVal, MaskRowIndices, "rowIndices");
+    Value *RowIndices =
+        Builder.CreateShuffleVector(MatrixVal, MaskRowIndices, "rowIndices");
 
-    auto MaskValues = std::move(createSequentialMask(OffsetValues, OffsetValues + nnz, 0));
+    auto MaskValues =
+        std::move(createSequentialMask(OffsetValues, OffsetValues + nnz, 0));
     Value *Values =
         Builder.CreateShuffleVector(MatrixVal, MaskValues, "values");
 
@@ -181,11 +205,11 @@ public:
 //     return Builder.CreateAlignedLoad(ColumnPtr, Align);
 //   }
 
-//   StoreInst *createColumnStore(Value *ColumnValue, Value *ColumnPtr,
-//                                Type *EltType, IRBuilder<> Builder) {
-//     unsigned Align = DL.getABITypeAlignment(EltType);
-//     return Builder.CreateAlignedStore(ColumnValue, ColumnPtr, Align);
-//   }
+  // StoreInst *createColumnStore(Value *ColumnValue, Value *ColumnPtr,
+  //                              Type *EltType, IRBuilder<> Builder) {
+  //   unsigned Align = DL.getABITypeAlignment(EltType);
+  //   return Builder.dStore(ColumnValue, ColumnPtr, Align);
+  // }
 
   /// Turns \p BasePtr into an elementwise pointer to \p EltType.
   Value *createElementPtr(Value *BasePtr, Type *EltType, IRBuilder<> &Builder) {
@@ -230,18 +254,14 @@ public:
     IRBuilder<> Builder(Inst);
     Value *Matrix = Inst->getArgOperand(0);
     Value *Ptr = Inst->getArgOperand(1);
-    ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(2)),
-                    cast<ConstantInt>(Inst->getArgOperand(3)));
+    // later check if this makes sense
+    // ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(2)),
+    //                 cast<ConstantInt>(Inst->getArgOperand(3)));
     auto VType = cast<VectorType>(Matrix->getType());
-    Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
-    auto LM = getMatrix(Matrix, Shape, Builder);
-
-    // for (auto C : enumerate(LM.columns())) {
-    //   Value *GEP =
-    //       computeColumnAddr(EltPtr, Builder.getInt32(C.index()), Stride,
-    //                         Shape.NumRows, VType->getElementType(), Builder);
-    //   createColumnStore(C.value(), GEP, VType->getElementType(), Builder);
-    // }
+    // Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
+    Align InitialAlign =
+        DL.getValueOrABITypeAlignment(Inst->getParamAlign(1), VType->getElementType());
+    Builder.CreateAlignedStore(Matrix, Ptr, InitialAlign);
   }
 
 //   /// Extract a column vector of \p NumElts starting at index (\p I, \p J) from

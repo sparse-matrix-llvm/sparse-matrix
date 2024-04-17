@@ -2479,6 +2479,32 @@ def int_matrix_column_major_store
                WriteOnly<ArgIndex<1>>, NoCapture<ArgIndex<1>>,
                ImmArg<ArgIndex<3>>, ImmArg<ArgIndex<4>>, ImmArg<ArgIndex<5>>]>;
 
+//===----- Matrix intrinsics ---------------------------------------------===//
+
+// https://scipy-lectures.org/advanced/scipy_sparse/csc_matrix.html
+def int_csc_matrix_store : DefaultAttrsIntrinsic<[],
+              [llvm_anyvector_ty, // flat array
+               llvm_ptr_ty], // where data will be stored
+              [IntrNoSync, IntrWillReturn, IntrArgMemOnly, IntrWriteMem,
+               WriteOnly<ArgIndex<1>>, NoCapture<ArgIndex<1>>]>;
+
+
+// def int_csc_matrix_load : DefaultAttrsIntrinsic<[],
+//               [llvm_ptr_ty, // Pointer to vector where loaded data will be stored
+//                llvm_ptr_ty, // Pointer to vector where loaded indices will be stored
+//                llvm_ptr_ty, // Pointer to vector where loaded indptr will be stored
+//                llvm_ptr_ty, // Pointer to source memory location for data
+//                llvm_ptr_ty, // Pointer to source memory location for indices
+//                llvm_ptr_ty, // Pointer to source memory location for indptr
+//                llvm_i32_ty, // Number of rows
+//                llvm_i32_ty], // Number of columns
+//               [IntrNoSync, IntrWillReturn, IntrArgMemOnly, IntrReadMem,
+//                NoCapture<ArgIndex<0>>, NoCapture<ArgIndex<1>>, NoCapture<ArgIndex<2>>,
+//                ReadOnly<ArgIndex<3>>, ReadOnly<ArgIndex<4>>, ReadOnly<ArgIndex<5>>,
+//                NoCapture<ArgIndex<3>>, NoCapture<ArgIndex<4>>, NoCapture<ArgIndex<5>>,
+//                ImmArg<ArgIndex<6>>, ImmArg<ArgIndex<7>>]>;
+
+
 //===---------- Intrinsics to control hardware supported loops ----------===//
 
 // Specify that the value given is the number of iterations that the next loop

@@ -2481,6 +2481,11 @@ def int_matrix_column_major_store
 
 //===----- Matrix intrinsics ---------------------------------------------===//
 
+def int_csc_matrix_load : DefaultAttrsIntrinsic<[llvm_anyvector_ty],
+              [llvm_anyvector_ty, llvm_i32_ty, llvm_i32_ty], // flat array
+              [IntrNoSync, IntrWillReturn, IntrArgMemOnly, IntrWriteMem,
+               NoCapture<ArgIndex<0>>, ImmArg<ArgIndex<1>>, ImmArg<ArgIndex<1>>]>;
+
 // https://scipy-lectures.org/advanced/scipy_sparse/csc_matrix.html
 def int_csc_matrix_store : DefaultAttrsIntrinsic<[],
               [llvm_anyvector_ty, // flat array

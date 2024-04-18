@@ -176,6 +176,9 @@ public:
     // case Intrinsic::matrix_columnwise_load:
     //   LowerColumnwiseLoad(Inst);
     //   break;
+    case Intrinsic::csc_matrix_load:
+      LowerCSCLoad(Inst);
+      break;
     case Intrinsic::csc_matrix_store:
       LowerCSCStore(Inst);
       break;
@@ -243,13 +246,39 @@ public:
 //     Inst->replaceAllUsesWith(Result.embedInVector(Builder));
 //   }
 
+  void LowerCSCLoad(CallInst *Inst) {
+    IRBuilder<> Builder(Inst);
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "hi hello LowerCSCLoad 1 \n");
+
+    Value *Ptr = Inst->getArgOperand(0);
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "hi hello LowerCSCLoad 2\n");
+    
+    ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(1)),
+                    cast<ConstantInt>(Inst->getArgOperand(2)));
+
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "hi hello LowerCSCLoad 3\n");
+    CSCMatrixTy Result;
+
+    Value *Index = Builder.getInt32(0);
+    Value *FirstElement = Builder.CreateExtractElement(Ptr, Index, "firstElement");
+    ConstantInt *CInt = dyn_cast<ConstantInt>(FirstElement);
+    
+    unsigned nnz = CInt->getZExtValue();
+    unsigned OffsetColPointers = 1;
+    unsigned OffsetRowIndices = OffsetColPointers + Shape.NumColumns + 1;
+
+    // Builder.CreateAlignedLoad(row_indices, ...)
+    // Builder.CreateAlignedLoad(col_pointers, ...)
+    // Builder.CreateAlignedLoad(col_pointers, ...)
+
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "load nnz: " << nnz << "\n");
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "load col: " << OffsetColPointers << "\n");
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "load row: " << OffsetRowIndices << "\n");
+  }
+
   /// Lowers llvm.matrix.columnwise.store.
   ///
   /// The intrinsic store a matrix back memory using a stride between columns.
-  /*
-   *
-   * 
-  */
   void LowerCSCStore(CallInst *Inst) {
     IRBuilder<> Builder(Inst);
     Value *Matrix = Inst->getArgOperand(0);

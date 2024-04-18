@@ -57,6 +57,7 @@
 #include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/MatrixBuilder.h"
+#include "llvm/IR/SparseMatrixBuilder.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ScopedPrinter.h"
@@ -3928,23 +3929,17 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   }
         
   case Builtin::BI__builtin_sparse_matrix_load: {
-    DEBUG_WITH_TYPE("matrix", llvm::dbgs() << "hi hello sparse load\n");
-    MatrixBuilder MB(Builder);
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "hi hello sparse load\n");
+    SparseMatrixBuilder MB(Builder);
     // Emit everything that isn't dependent on the first parameter type
-    Value *Stride = EmitScalarExpr(E->getArg(3));
     const auto *ResultTy = E->getType()->getAs<ConstantMatrixType>();
-    auto *PtrTy = E->getArg(0)->getType()->getAs<PointerType>();
-    assert(PtrTy && "arg0 must be of pointer type");
-    bool IsVolatile = PtrTy->getPointeeType().isVolatileQualified();
-
+    DEBUG_WITH_TYPE("sparse", llvm::dbgs() << "hi hello sparse load "  << ResultTy->getNumRows());
     Address Src = EmitPointerWithAlignment(E->getArg(0));
-    EmitNonNullArgCheck(RValue::get(Src.emitRawPointer(*this)),
-                        E->getArg(0)->getType(), E->getArg(0)->getExprLoc(), FD,
-                        0);
-    Value *Result = MB.CreateColumnMajorLoad(
+
+    Value *Result = MB.CreateSparseMatrixLoad(
         Src.getElementType(), Src.emitRawPointer(*this),
-        Align(Src.getAlignment().getQuantity()), Stride, IsVolatile,
-        ResultTy->getNumRows(), ResultTy->getNumColumns(), "matrix");
+        ResultTy->getNumRows(), ResultTy->getNumColumns());
+
     return RValue::get(Result);
   }
 

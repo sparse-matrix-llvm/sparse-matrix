@@ -75,10 +75,14 @@ class LowerSparseIntrinsics {
 
     /// Embed the columns of the matrix into a flat vector by concatenating
     /// them.
-    // Value *embedInVector(IRBuilder<> &Builder) const {
-    //   return Columns.size() == 1 ? Columns[0]
-    //                              : concatenateVectors(Builder, Columns);
-    // }
+    Value *embedInVector(IRBuilder<> &Builder) const {
+       SmallVector<Value *, 16> FlatVector;
+       FlatVector.append({Builder.getInt32(nnz)});
+       FlatVector.append(ColPointers.begin(), ColPointers.end());
+       FlatVector.append(RowIndices.begin(), RowIndices.end());
+       FlatVector.append(Values.begin(), Values.end());
+       return concatenateVectors(Builder, FlatVector);;
+    }
   };
 
   struct ShapeInfo {
@@ -94,26 +98,25 @@ class LowerSparseIntrinsics {
   };
 
   // namespace {
-  // Value *computeVectorAddr(Value *BasePtr, Value *VecIdx, Value *Stride,
-  //                          unsigned NumElements, Type *EltType,
-  //                          IRBuilder<> &Builder) {
+  Value *computeVectorAddr(Value *BasePtr, unsigned CSCPart, unsigned nnz,
+                           Type *EltType, IRBuilder<> &Builder) {
 
-  //   // assert((!isa<ConstantInt>(Stride) ||
-  //           // cast<ConstantInt>(Stride)->getZExtValue() >= NumElements) &&
-  //         //  "Stride must be >= the number of elements in the result vector.");
+    // assert((!isa<ConstantInt>(Stride) ||
+    // cast<ConstantInt>(Stride)->getZExtValue() >= NumElements) &&
+    //  "Stride must be >= the number of elements in the result vector.");
 
-  //   // Compute the start of the vector with index VecIdx as VecIdx * Stride.
-  //   // Value *VecStart = Builder.CreateMul(VecIdx, Stride, "vec.start");
+    // Compute the start of the vector with index VecIdx as VecIdx * Stride.
+    // Value *VecStart = Builder.CreateMul(VecIdx, Stride, "vec.start");
 
-  //   // Get pointer to the start of the selected vector. Skip GEP creation,
-  //   // if we select vector 0.
-  //   if (isa<ConstantInt>(VecStart) && cast<ConstantInt>(VecStart)->isZero())
-  //     VecStart = BasePtr;
-  //   else
-  //     VecStart = Builder.CreateGEP(EltType, BasePtr, VecStart, "vec.gep");
+    // Get pointer to the start of the selected vector. Skip GEP creation,
+    // if we select vector 0.
+    // if (isa<ConstantInt>(VecStart) && cast<ConstantInt>(VecStart)->isZero())
+    //   VecStart = BasePtr;
+    // else
+    //   VecStart = Builder.CreateGEP(EltType, BasePtr, VecStart, "vec.gep");
 
-  //   return VecStart;
-  // }
+    // return VecStart;
+  }
   // }
 
 public:
@@ -122,43 +125,180 @@ public:
 
   // / Return the set of column vectors that a matrix value is lowered to.
   // /
+  //  MatrixTy loadMatrix(Type *Ty, Value *Ptr, MaybeAlign MAlign, Value *Stride,
+  //                    bool IsVolatile, ShapeInfo Shape, IRBuilder<> &Builder) {
+  //  auto *VType = cast<VectorType>(Ty);
+  //  Type *EltTy = VType->getElementType();
+  //  Type *VecTy = FixedVectorType::get(EltTy, Shape.getStride()); // sizeof(unsigned int) * length_col
+  //  Value *EltPtr = Ptr;
+  //  MatrixTy Result;
+  //  for (unsigned I = 0, E = Shape.getNumVectors(); I < E; ++I) {
+  //    Value *GEP = computeVectorAddr(
+  //        EltPtr, Builder.getIntN(Stride->getType()->getScalarSizeInBits(), I),
+  //        Stride, Shape.getStride(), EltTy, Builder);
+  //    Value *Vector = Builder.CreateAlignedLoad(
+  //        VecTy, GEP, getAlignForIndex(I, Stride, EltTy, MAlign),
+  //        IsVolatile, "col.load");
+
+  //    Result.addVector(Vector);
+  //  }
+  //  return Result.addNumLoads(getNumOps(Result.getVectorTy()) *
+  //                            Result.getNumVectors());
+  //}
+
+  Value *computeVectorAddr(Value *BasePtr, Value *VecIdx, Value *Stride,
+                         unsigned NumElements, Type *EltType,
+                         IRBuilder<> &Builder) {
+
+  assert((!isa<ConstantInt>(Stride) ||
+          cast<ConstantInt>(Stride)->getZExtValue() >= NumElements) &&
+         "Stride must be >= the number of elements in the result vector.");
+
+  // Compute the start of the vector with index VecIdx as VecIdx * Stride.
+  Value *VecStart = Builder.CreateMul(VecIdx, Stride, "vec.start");
+
+  // Get pointer to the start of the selected vector. Skip GEP creation,
+  // if we select vector 0.
+  if (isa<ConstantInt>(VecStart) && cast<ConstantInt>(VecStart)->isZero())
+    VecStart = BasePtr;
+  else
+    VecStart = Builder.CreateGEP(EltType, BasePtr, VecStart, "vec.gep");
+
+  return VecStart;
+}
+
   // / We split the flat vector \p MatrixVal containing a matrix with shape \p
   // SI / into column vectors.
-  CSCMatrixTy getMatrix(Value *MatrixVal, const ShapeInfo &SI,
-                        IRBuilder<> &Builder) {
-    VectorType *VType = dyn_cast<VectorType>(MatrixVal->getType());
-    assert(VType && "CSCMatrixVal must be a vector type");
+  CSCMatrixTy loadMatrix(Type *Ty, Value *Ptr, MaybeAlign MAlign,
+                         const ShapeInfo &SI, IRBuilder<> &Builder) {
+    auto *VType = cast<VectorType>(Ty);
+    Type *EltTy = VType->getElementType();
+    Value *EltPtr = Ptr;
+
+  /**
+   *    nnz = flat_array[0]
+        offset_col_pointers = 1
+        offset_row_indices = offset_col_pointers + num_cols + 1
+        offset_values = offset_row_indices + nnz
+    
+        col_pointers = flat_array[offset_col_pointers:offset_row_indices]; flat_array[1: 1 + num_cols + 1]; start at 1
+        row_indices = flat_array[offset_row_indices:offset_values]
+        values = flat_array[offset_values:offset_values + nnz]
+   * 
+  */
+    // lets load the nnz
+    // Type *VecTy = FixedVectorType::get(EltTy, Shape.getStride());
+    // Type *NNZTy = FixedVectorType::get(EltTy, 1);
+    // pass in for align: getAlignForIndex(I, Stride, EltTy, MAlign),
+
+    // Align NnzAlign = DL.getValueOrABITypeAlignment(MAlign, EltTy);
+    Type *NNZTy = FixedVectorType::get(EltTy, 1);
+    Value *Nnz = Builder.createLoad(NNZTy, EltPtr, "nnz");
+    unsigned nnz;
+
+
+    // link: 
+    if (ConstantInt *CI = dyn_cast<EltTy>(Nnz)) {
+      // if (CI->getBitWidth() <= 32) {
+        nnz = CI->getSExtValue();
+      // }
+    }
+
+    // Value *Index = Builder.getInt32(0);
+    // start at 1. end at 2 + num_cols
+    /*
+      Value *CreateGEP(Type *Ty, Value *Ptr, Value *Idx, const Twine &Name =
+  "") { if (auto *PC = dyn_cast<Constant>(Ptr)) if (auto *IC =
+  dyn_cast<Constant>(Idx)) return Insert(Folder.CreateGetElementPtr(Ty, PC,
+  IC), Name); return Insert(GetElementPtrInst::Create(Ty, Ptr, Idx), Name);
+  }
+    /// Compute the alignment for a column/row \p Idx with \p Stride between
+them.
+/// The address at \p Idx == 0 has alignment \p A. If \p Stride is a
+/// ConstantInt, reduce the initial alignment based on the byte offset. For
+/// non-ConstantInt strides, return the common alignment of the initial
+/// alignment and the element size in bytes.
+Align getAlignForIndex(unsigned Idx, Value *Stride, Type *ElementTy,
+                     MaybeAlign A) const {
+Align InitialAlign = DL.getValueOrABITypeAlignment(A, ElementTy);
+if (Idx == 0)
+  return InitialAlign;
+
+TypeSize ElementSizeInBits = DL.getTypeSizeInBits(ElementTy);
+if (auto *ConstStride = dyn_cast<ConstantInt>(Stride)) {
+  uint64_t StrideInBytes =
+      ConstStride->getZExtValue() * ElementSizeInBits / 8;
+  return commonAlignment(InitialAlign, Idx * StrideInBytes);
+}
+return commonAlignment(InitialAlign, ElementSizeInBits / 8);
+}
+    */
+    Type *ColTy = FixedVectorType::get(EltTy, 1 + SI.NumColumns);
+    Value *ColPtrStart = Builder.CreateGEP(
+        EltTy, EltPtr,
+        Builder.CreateAdd(EltPlt, Builder.getInt32(1), "colptr.start"),
+        "colptr.gep");
+    Value *ColPtrVector = Builder.CreateLoad(ColTy, ColPtrStart);
+
+    Type *RowTy = FixedVectorType::get(EltTy, 2 + SI.NumColumns); // NNZ
+    Value *RowIdxStart = Builder.CreateGEP(
+        EltTy, EltPtr,
+        Builder.CreateAdd(ColPtrStartP, Builder.getInt32(SI.NumColumns), "rowidx.start"),
+        "rowidx.gep")
+    Value *RowIdxVector = Builder.CreateLoadRowTy, RowIdxStart();
+
+    Type *ValuesTy = FixedVectorType::get(EltTy, 2 + SI.NumColumns) // NNZ;
+    Value *ValueStarP = Builder.CreateGEP
+        (EltTy, EltPtr
+         Builder.CreateAdd(RowIdxStarP, Nnz, "values.start")
+         "values.start");
+    Value *Values = Builder.CreateAlignedLoadValuesTy, ValuesStart();    // Value *RowIdxStart = 
+    // Value *ValuesStart = 
+
+    
+    // Value *GEP = computeVectorAddr(
+    //     EltPtr, Builder.getIntN(Stride->getType()->getScalarSizeInBits(), I),
+    //     Stride, Shape.getStride(), EltTy, Builder);
+    Value *Vector = Builder.CreateAlignedLoad(
+        VecTy, GEP, getAlignForIndex(I, Stride, EltTy, MAlign), IsVolatile,
+        "col.load");
+
+    // one createAlignedLoad that's just NNZ
+
+
+    // VectorType *VType = dyn_cast<VectorType>(MatrixVal->getType());
+    // assert(VType && "CSCMatrixVal must be a vector type");
     // assert(VType->getNumElements() == SI.NumRows * SI.NumColumns &&
     //        "The vector size must match the number of matrix elements");
 
-    Value *Index = Builder.getInt32(0);
-    Value *FirstElement =
-        Builder.CreateExtractElement(MatrixVal, Index, "firstElement");
-    ConstantInt *CInt = dyn_cast<ConstantInt>(FirstElement);
-    assert(CInt && "nnz must be an integer");
-    assert(!CInt->isNegative() && "nnz must be nonnegative");
-    unsigned nnz = CInt->getZExtValue();
+    // Value *Index = Builder.getInt32(0);
+    // Value *FirstElement =
+    //     Builder.CreateExtractElement(MatrixVal, Index, "firstElement");
+    // ConstantInt *CInt = dyn_cast<ConstantInt>(FirstElement);
+    // assert(CInt && "nnz must be an integer");
+    // assert(!CInt->isNegative() && "nnz must be nonnegative");
+    // unsigned nnz = CInt->getZExtValue();
 
-    unsigned OffsetColPointers = 1;
-    unsigned OffsetRowIndices = OffsetColPointers + SI.NumColumns + 1;
-    unsigned OffsetValues = OffsetRowIndices + nnz;
+    // unsigned OffsetColPointers = 1;
+    // unsigned OffsetRowIndices = OffsetColPointers + SI.NumColumns + 1;
+    // unsigned OffsetValues = OffsetRowIndices + nnz;
 
-    auto MaskColPtrs =
-        std::move(createSequentialMask(OffsetColPointers, OffsetRowIndices, 0));
-    Value *ColPointers =
-        Builder.CreateShuffleVector(MatrixVal, MaskColPtrs, "colPointers");
+    // auto MaskColPtrs =
+    //     std::move(createSequentialMask(OffsetColPointers, OffsetRowIndices, 0));
+    // Value *ColPointers =
+    //     Builder.CreateShuffleVector(MatrixVal, MaskColPtrs, "colPointers");
 
-    auto MaskRowIndices =
-        std::move(createSequentialMask(OffsetRowIndices, OffsetValues, 0));
-    Value *RowIndices =
-        Builder.CreateShuffleVector(MatrixVal, MaskRowIndices, "rowIndices");
+    // auto MaskRowIndices =
+    //     std::move(createSequentialMask(OffsetRowIndices, OffsetValues, 0));
+    // Value *RowIndices =
+    //     Builder.CreateShuffleVector(MatrixVal, MaskRowIndices, "rowIndices");
 
-    auto MaskValues =
-        std::move(createSequentialMask(OffsetValues, OffsetValues + nnz, 0));
-    Value *Values =
-        Builder.CreateShuffleVector(MatrixVal, MaskValues, "values");
+    // auto MaskValues =
+    //     std::move(createSequentialMask(OffsetValues, OffsetValues + nnz, 0));
+    // Value *Values =
+    //     Builder.CreateShuffleVector(MatrixVal, MaskValues, "values");
 
-    return {ColPointers, RowIndices, Values, nnz};
+    // return {ColPointers, RowIndices, Values, nnz};
   }
 
   // Replace intrinsic calls
@@ -173,9 +313,9 @@ public:
     // case Intrinsic::matrix_transpose:
     //   LowerTranspose(Inst);
     //   break;
-    // case Intrinsic::matrix_columnwise_load:
-    //   LowerColumnwiseLoad(Inst);
-    //   break;
+    case Intrinsic::csc_matrix_load:
+      LowerCSCLoad(Inst);
+      break;
     case Intrinsic::csc_matrix_store:
       LowerCSCStore(Inst);
       break;
@@ -199,11 +339,16 @@ public:
     return Changed;
   }
 
-//   LoadInst *createColumnLoad(Value *ColumnPtr, Type *EltType,
-//                              IRBuilder<> Builder) {
-//     unsigned Align = DL.getABITypeAlignment(EltType);
-//     return Builder.CreateAlignedLoad(ColumnPtr, Align);
-//   }
+  // LoadInst *createVectorLoad(Value *VectorPtr, Type *EltType,
+  //                            IRBuilder<> Builder) {
+  //                             //  LoadInst *CreateAlignedLoad(Type *Ty, Value *Ptr, MaybeAlign Align,
+  //   //                          const Twine &Name = "") {
+  //   // Align InitialAlign = DL.getValueOrABITypeAlignment(Inst->getParamAlign(1),
+  //                                                     //  VType->getElementType());
+  //   return Builder.CreateAlignedLoad(Matrix, Ptr, InitialAlign);
+  //   // unsigned Align = DL.getABITypeAlignment(EltType);
+  //   // return Builder.CreateAlignedLoad(ColumnPtr, Align);
+  // }
 
   // StoreInst *createColumnStore(Value *ColumnValue, Value *ColumnPtr,
   //                              Type *EltType, IRBuilder<> Builder) {
@@ -221,27 +366,23 @@ public:
   /// Lowers llvm.matrix.columnwise.load.
   ///
   /// The intrinsic loads a matrix from memory using a stride between columns.
-//   void LowerColumnwiseLoad(CallInst *Inst) {
-//     IRBuilder<> Builder(Inst);
-//     Value *Ptr = Inst->getArgOperand(0);
-//     Value *Stride = Inst->getArgOperand(1);
-//     auto VType = cast<VectorType>(Inst->getType());
-//     ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(2)),
-//                     cast<ConstantInt>(Inst->getArgOperand(3)));
-//     Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
+  void LowerCSCLoad(CallInst *Inst) {
+    IRBuilder<> Builder(Inst);
+    Value *Ptr = Inst->getArgOperand(0);
+    auto VType = cast<VectorType>(Inst->getType());
+    ShapeInfo Shape(cast<ConstantInt>(Inst->getArgOperand(1)),
+                    cast<ConstantInt>(Inst->getArgOperand(2)));
+                    
+    // Align InitialAlign = DL.getValueOrABITypeAlignment(Inst->getParamAlign(0),
+    //                                                    VType->getElementType());
+    CSCMatrixTy cscMatrix = loadMatrix(Inst->getType(), Ptr, Inst->getParamAlign(0), Shape);
+    //LowerLoad(Instruction *Inst, Value *Ptr, MaybeAlign Align, Value *Stride,
+//                 bool IsVolatile, ShapeInfo Shape)
+    // Value *EltPtr = createElementPtr(Ptr, VType->getElementType(), Builder);
+    // CSCMatrixTy cscmatrix = getMatrix()
 
-//     ColumnMatrixTy Result;
-//     // Distance between start of one column and the start of the next
-//     for (unsigned C = 0, E = Shape.NumColumns; C < E; ++C) {
-//       Value *GEP =
-//           computeColumnAddr(EltPtr, Builder.getInt32(C), Stride, Shape.NumRows,
-//                             VType->getElementType(), Builder);
-//       Value *Column = createColumnLoad(GEP, VType->getElementType(), Builder);
-//       Result.addColumn(Column);
-//     }
-
-//     Inst->replaceAllUsesWith(Result.embedInVector(Builder));
-//   }
+    Inst->replaceAllUsesWith(Result.embedInVector(Builder));
+  }
 
   /// Lowers llvm.matrix.columnwise.store.
   ///

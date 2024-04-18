@@ -2489,6 +2489,11 @@ def int_csc_matrix_store : DefaultAttrsIntrinsic<[],
                WriteOnly<ArgIndex<1>>, NoCapture<ArgIndex<1>>]>;
 
 
+def int_csc_matrix_load : DefaultAttrsIntrinsic<[llvm_anyvector_ty],
+              [llvm_ptr_ty, llvm_i32_ty, llvm_i32_ty], 
+              [IntrNoSync, IntrWillReturn, IntrArgMemOnly, IntrReadMem,
+               NoCapture<ArgIndex<0>>, ImmArg<ArgIndex<1>>, ImmArg<ArgIndex<2>>]>;
+
 // def int_csc_matrix_load : DefaultAttrsIntrinsic<[],
 //               [llvm_ptr_ty, // Pointer to vector where loaded data will be stored
 //                llvm_ptr_ty, // Pointer to vector where loaded indices will be stored

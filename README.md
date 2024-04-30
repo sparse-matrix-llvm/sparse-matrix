@@ -42,3 +42,33 @@ chat](https://discord.gg/xS7Z362),
 
 The LLVM project has adopted a [code of conduct](https://llvm.org/docs/CodeOfConduct.html) for
 participants to all modes of communication within the project.
+
+## 6156 Additions
+
+Please find all project milestone assignments in the 6156 directory.
+
+Test programs can be found in the `sparse-test` directory of the project root. 
+
+To run the tests, the fork of our LLVM project must first be built. The following commands have worked for us:
+
+```
+$ cd ./build
+$ cmake -DCMAKE_C_COMPILER=clang \
+        -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DLLVM_ENABLE_PROJECTS=clang \
+        -GNinja ../llvm
+$ ninja -j<N_THREADS>
+\end{lstlisting}
+The commands above will build LLVM and Clang. Using the built binaries, we emit the LLVM IR of test \lstinline{C} programs via:
+\begin{lstlisting}
+$ <LLVM_ROOT>/build/bin/clang -S -fenable-matrix -emit-llvm <FILE>.c -o <FILE>.ll
+```
+
+We also designed a test for our `store` intrinsic, which may be run via 
+
+```
+$ <LLVM_ROOT>/build/bin/llvm-lit llvm/test/Transforms/LowerSparseIntrinsics/sparse-store-double.ll
+```
+
+For WIP code that depicts some of the details of our attempt in implementing more complex sparse matrix operations, please refer to the branches on our GitHub repository that is not `main`.
